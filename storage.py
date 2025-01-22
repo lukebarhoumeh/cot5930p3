@@ -1,7 +1,7 @@
 from google.cloud import storage
 import os
 
-# Initialize the storage client
+
 storage_client = storage.Client()
 
 def get_list_of_files(bucket_name):
@@ -9,9 +9,9 @@ def get_list_of_files(bucket_name):
     print("\n")
     print("get_list_of_files: " + bucket_name)
 
-    # Fetch all blobs with the "files/" prefix
+    
     blobs = storage_client.list_blobs(bucket_name, prefix="files/")
-    files = [blob.name.replace("files/", "") for blob in blobs if not blob.name.endswith("/")]  # Remove 'files/' prefix for display
+    files = [blob.name.replace("files/", "") for blob in blobs if not blob.name.endswith("/")]  
 
     return files
 
@@ -21,9 +21,9 @@ def upload_file(bucket_name, file_name):
     print("upload_file: " + bucket_name + "/files/" + os.path.basename(file_name))
 
     bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(f"files/{os.path.basename(file_name)}")  # Use basename to avoid nesting
+    blob = bucket.blob(f"files/{os.path.basename(file_name)}")  
 
-    blob.upload_from_filename(file_name)  # Upload file
+    blob.upload_from_filename(file_name)  
     return
 
 def download_file(bucket_name, file_name):
@@ -31,14 +31,14 @@ def download_file(bucket_name, file_name):
     print("\n")
     print("download_file: " + bucket_name + "/files/" + file_name)
 
-    # Ensure the local 'files' folder exists
+   
     os.makedirs("./files", exist_ok=True)
 
     bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(f"files/{file_name}")  # Include 'files/' prefix to match bucket structure
+    blob = bucket.blob(f"files/{file_name}")  
     local_file_path = f"./files/{file_name}"
 
-    # Download file to the local path
+    
     blob.download_to_filename(local_file_path)
     print(f"File downloaded to: {local_file_path}")
 

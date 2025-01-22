@@ -85,11 +85,11 @@ def index():
 @app.route('/upload', methods=["POST"])
 def upload():
     file = request.files['form_file']  # item name must match name in HTML form
-    file_path = os.path.join("./files", file.filename)  # Define the file path
-    file.save(file_path)  # Save the file locally
+    file_path = os.path.join("./files", file.filename)  
+    file.save(file_path)  
 
     from storage import upload_file
-    upload_file(BUCKET_NAME, file_path)  # Upload to the cloud bucket
+    upload_file(BUCKET_NAME, file_path)  
 
     return redirect("/")
 
@@ -105,12 +105,12 @@ def get_file(filename):
     from storage import download_file
     local_path = os.path.join("./files", filename)
     
-    # Check if file exists locally
+    
     if not os.path.exists(local_path):
-        # If not, download it from Google Cloud Storage
+        
         download_file(BUCKET_NAME, filename)
 
-    # Serve the file
+   
     if os.path.exists(local_path):
         return send_file(local_path)
     else:

@@ -1,121 +1,168 @@
-"""
-############################
-# 1st phase - all in 1 app #
-############################
-1. flask hello world
-
-2. add other flask endpoints
-
-3. hard code responses
-
-4. look up how to accept only POST (GET is default)
-
-5. return html for GET /
-<form method="post" enctype="multipart/form-data" action="/upload" method="post">
-  <div>
-    <label for="file">Choose file to upload</label>
-    <input type="file" id="file" name="form_file" accept="image/jpeg"/>
-  </div>
-  <div>
-    <button>Submit</button>
-  </div>
-</form>
-
-6. in GET /files return a hardcoded list for initial testing
-files = ['file1.jpeg', 'file2.jpeg', 'file3.jpeg']
-
-7. in GET / call the function for GET /files and loop through the list to add to the HTML
-GET /
-    ...
-    for file in list_files():
-        index_html += "<li><a href=\"/files/" + file + "\">" + file + "</a></li>"
-
-    return index_html
-
-8. in POST /upload - lookup how to extract uploaded file and save locally to ./files
-def upload():
-    file = request.files['form_file']  # item name must match name in HTML form
-    file.save(os.path.join("./files", file.filename))
-
-    return redirect("/")
-#https://flask.palletsprojects.com/en/2.2.x/patterns/fileuploads/
-
-9. in GET /files - look up how to list files in a directory
-
-    files = os.listdir("./files")
-    #TODO: filter jpeg only
-    return files
-
-10. filter only .jpeg
-@app.route('/files')
-def list_files():
-    files = os.listdir("./files")
-    for file in files:
-        if not file.endswith(".jpeg"):
-            files.remove(file)
-    return files
-"""
 import os
-from flask import Flask, redirect, request, send_file
-from google.cloud import storage
-os.makedirs('files', exist_ok = True)
+import json
+import base64
+import requests
 
-app = Flask(__name__)
+from flask import Flask, request, redirect, send_file
+from google.cloud import storage
+
+
+API_KEY = os.environ.get("GENAI_API_KEY") 
+MODEL_ID = "gemini-1.5-pro-002"
 BUCKET_NAME = "cot5930-image-p1"
 
+API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_ID}:generateContent?key={API_KEY}"
 
-@app.route('/')
+app = Flask(__name__)
+storage_client = storage.Client()
+os.makedirs("files", exist_ok=True)
+
+def generate_image_description(local_image_path):
+    with open(local_image_path, "rb") as f:
+        raw = f.read()
+    b64_str = base64.b64encode(raw).decode("utf-8")
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": b64_str
+                        }
+                    },
+                    {
+                        "text": "Please provide a short 1-2 sentence description of the above image."
+                    }
+                ]
+            }
+        ]
+    }
+
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(API_URL, headers=headers, json=payload, timeout=60)
+    if resp.status_code != 200:
+        return f"ERROR calling Gemini: {resp.text}"
+
+    data = resp.json()
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return "No candidates returned."
+
+    first_candidate = candidates[0]
+    content = first_candidate.get("content", {})
+    parts = content.get("parts", [])
+    if not parts:
+        return "No text in the candidate output."
+
+    description = ""
+    for p in parts:
+        description += p.get("text", "")
+
+    return description.strip()
+
+def list_files():
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blobs = bucket.list_blobs(prefix="files/")
+    names = []
+    for b in blobs:
+        if not b.name.endswith("/"):
+            names.append(b.name.replace("files/", ""))
+    return names
+
+def upload_to_bucket(local_path, blob_name):
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(f"files/{blob_name}")
+    blob.upload_from_filename(local_path)
+
+def download_from_bucket(blob_name, local_path):
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(f"files/{blob_name}")
+    blob.download_to_filename(local_path)
+
+@app.route("/")
 def index():
-    index_html="""
-<form method="post" enctype="multipart/form-data" action="/upload" method="post">
-  <div>
-    <label for="file">Choose file to upload</label>
-    <input type="file" id="file" name="form_file" accept="image/jpeg"/>
-  </div>
-  <div>
-    <button>Submit</button>
-  </div>
-</form>"""    
+    html = """
+    <html><body>
+    <h2>Upload a JPEG</h2>
+    <form method="POST" action="/upload" enctype="multipart/form-data">
+      <input type="file" name="form_file" accept="image/jpeg"/>
+      <button>Upload</button>
+    </form>
+    <hr>
+    <h3>Files in GCS:</h3>
+    <ul>
+    """
+    for fname in list_files():
+        if fname.lower().endswith((".jpg", ".jpeg")):
+            html += f'<li><a href="/view/{fname}">{fname}</a></li>'
+    html += "</ul></body></html>"
+    return html
 
-    for file in list_files():
-        index_html += "<li><a href=\"/files/" + file + "\">" + file + "</a></li>"
-
-    return index_html
-
-@app.route('/upload', methods=["POST"])
+@app.route("/upload", methods=["POST"])
 def upload():
-    file = request.files['form_file']  # item name must match name in HTML form
-    file_path = os.path.join("./files", file.filename)  
-    file.save(file_path)  
+    uploaded_file = request.files.get("form_file")
+    if not uploaded_file:
+        return "No file submitted", 400
 
-    from storage import upload_file
-    upload_file(BUCKET_NAME, file_path)  
+    local_path = os.path.join("files", uploaded_file.filename)
+    uploaded_file.save(local_path)
+
+    description = generate_image_description(local_path)
+
+    base_name, _ = os.path.splitext(uploaded_file.filename)
+    json_name = base_name + ".json"
+    json_path = os.path.join("files", json_name)
+    with open(json_path, "w") as f:
+        json.dump({"title": uploaded_file.filename, "description": description}, f)
+
+    upload_to_bucket(local_path, uploaded_file.filename)
+    upload_to_bucket(json_path, json_name)
 
     return redirect("/")
 
+@app.route("/view/<filename>")
+def view_file(filename):
+    local_img = os.path.join("files", filename)
+    if not os.path.exists(local_img):
+        download_from_bucket(filename, local_img)
 
-@app.route('/files')
-def list_files():
-    from storage import get_list_of_files
-    files = get_list_of_files(BUCKET_NAME)
-    return files
+    base_name, _ = os.path.splitext(filename)
+    local_json = os.path.join("files", base_name + ".json")
+    if not os.path.exists(local_json):
+        download_from_bucket(base_name + ".json", local_json)
 
-@app.route('/files/<filename>')
-def get_file(filename):
-    from storage import download_file
-    local_path = os.path.join("./files", filename)
-    
-    
+    title = filename
+    description = "No description found."
+    if os.path.exists(local_json):
+        with open(local_json, "r") as f:
+            data = json.load(f)
+            title = data.get("title", title)
+            description = data.get("description", description)
+
+    html = f"""
+    <html>
+    <head><title>{title}</title></head>
+    <body>
+      <h1>{title}</h1>
+      <img src="/files/{filename}" style="max-width:400px;"/>
+      <p>{description}</p>
+      <a href="/">Back</a>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route("/files/<filename>")
+def serve_file(filename):
+    local_path = os.path.join("files", filename)
     if not os.path.exists(local_path):
-        
-        download_file(BUCKET_NAME, filename)
-
-   
-    if os.path.exists(local_path):
-        return send_file(local_path)
-    else:
+        download_from_bucket(filename, local_path)
+    if not os.path.exists(local_path):
         return "File not found", 404
+    return send_file(local_path)
 
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=True)

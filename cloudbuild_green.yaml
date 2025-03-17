@@ -1,0 +1,33 @@
+steps:
+
+  - name: 'python:3.10-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --no-cache-dir -r requirements.txt
+        echo "No tests yet"
+
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/imaging-app', '.']
+
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/imaging-app']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args:
+      [
+        'run', 'deploy', 'imaging-app',
+        '--image', 'gcr.io/$PROJECT_ID/imaging-app',
+        '--region', 'us-east1',
+        '--allow-unauthenticated',
+        '--update-env-vars=BG_COLOR=green'
+      ]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'gcr.io/$PROJECT_ID/imaging-app'

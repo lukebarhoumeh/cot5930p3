@@ -1,24 +1,24 @@
-# COT 5930 – Project 3
+# COT 5930 – course project 
 
 **Name**: Ibrahim “Luke” Barhoumeh (Z23652726)  
-**Date**: March 2025  
+**Date**: April 2025  
 **Professor**: Andrade  
 
 ---
 
 ## 1. Overview
 
-In this project, I extended my previous work from Projects 1 and 2 by integrating **change management** and **automated deployment** in a **blue/green** context using Google Cloud. The objectives included:
+In this project, I extended my previous work from Projects 1,2 and 3 by integrating **change management** and **automated deployment** in a **blue/green** context using Google Cloud then reverting back to one color 100% traffic. The objectives included:
 
-- **Automated CI/CD** from GitHub to Cloud Run via **Cloud Build** triggers.  
-- **Two parallel versions** of the Flask application—one “blue” and one “green”—with traffic split 50/50 at the Cloud Run layer, **without** any custom logic in my code.  
+- **Automated CI/CD** from GitHub to Cloud Run via **Cloud Build** triggers.   
 - Retaining a private Google Cloud Storage (GCS) bucket and the Gemini AI API for image captioning.
 
-### Key Advancements from Project 2
+### Key Advancements from Project 2/3
 
 - **Automation**: I introduced Cloud Build triggers so that all pushes to GitHub automatically build and deploy the container—no manual `gcloud` commands needed.  
 - **Blue/Green Strategy**: Two distinct Cloud Build configurations (`cloudbuild_blue.yaml` and `cloudbuild_green.yaml`) deploy separate revisions with different environment variables (`BG_COLOR=blue` / `BG_COLOR=green`).  
 - **Parallel Revisions**: Cloud Run runs both “blue” and “green” versions concurrently, each receiving 50% of incoming requests.
+- for this Final project revising back to 100% traffic to blue
 
 ---
 
@@ -36,8 +36,8 @@ In this project, I extended my previous work from Projects 1 and 2 by integr
    - Both the image (`filename.jpg`) and corresponding JSON (`filename.json`) are uploaded to a **private** GCS bucket.  
    - Users never receive direct GCS URLs; the Flask app mediates access.
 
-4. **Blue/Green Deployment**  
-   - Two **Cloud Build** YAML files:
+4. **Blue Deployment**  
+   - 1 **Cloud Build** YAML file using:
      - `cloudbuild_blue.yaml` → sets `BG_COLOR=blue`  
      - `cloudbuild_green.yaml` → sets `BG_COLOR=green`  
    - Each build config deploys to the same Cloud Run service but creates distinct revisions.  
